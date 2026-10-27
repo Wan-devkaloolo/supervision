@@ -1,0 +1,285 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#0B1F3A">
+<title>STHC Site Ops</title>
+<link rel="manifest" href="manifest.json">
+<style>
+:root{--navy:#0B1F3A;--navy2:#13305a;--gold:#C9A24B;--bg:#f4f5f8;--card:#fff;--text:#14213a;--mute:#6b7690;--ok:#1f9d55;--bad:#d64545;--warn:#e0a020;--line:#e3e6ee}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+body{margin:0;font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif;background:var(--bg);color:var(--text)}
+header{background:var(--navy);color:#fff;padding:14px 16px;display:flex;align-items:center;justify-content:space-between;position:sticky;top:0;z-index:5}
+header h1{font-size:16px;margin:0;color:var(--gold);letter-spacing:.3px}
+header small{display:block;color:#b9c3d9;font-size:12px}
+header button{background:transparent;border:1px solid #4a5f86;color:#fff;border-radius:8px;padding:6px 10px;font-size:13px}
+main{max-width:900px;margin:0 auto;padding:14px 14px 80px}
+.card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:14px;margin-bottom:12px}
+.row{display:flex;gap:10px;align-items:center;justify-content:space-between;flex-wrap:wrap}
+h2{font-size:15px;margin:0 0 8px}
+h3{font-size:13px;margin:14px 0 6px;color:var(--mute);text-transform:uppercase;letter-spacing:.5px}
+input,select,textarea{width:100%;padding:11px;border:1px solid var(--line);border-radius:10px;font-size:15px;margin:4px 0 10px;background:#fff;font-family:inherit}
+label{font-size:12px;color:var(--mute)}
+button.btn{background:var(--navy);color:#fff;border:0;border-radius:10px;padding:12px 16px;font-size:15px;font-weight:600;width:100%}
+button.btn.gold{background:var(--gold);color:var(--navy)}
+button.btn.ghost{background:#fff;color:var(--navy);border:1px solid var(--navy)}
+button.btn.red{background:var(--bad)}
+button.btn.sm{width:auto;padding:8px 12px;font-size:13px}
+.grid{display:grid;gap:12px;grid-template-columns:repeat(auto-fill,minmax(270px,1fr))}
+.pill{display:inline-block;font-size:11px;font-weight:700;border-radius:99px;padding:3px 9px}
+.pill.on{background:#e2f6ea;color:var(--ok)}.pill.off{background:#eceff5;color:var(--mute)}
+.pill.late{background:#fde9e9;color:var(--bad)}.pill.warn{background:#fff3da;color:#9a6b00}
+.bar{height:8px;background:var(--line);border-radius:99px;overflow:hidden;margin:8px 0}
+.bar>i{display:block;height:100%;background:var(--gold)}
+.mute{color:var(--mute);font-size:13px}
+.log{border-top:1px solid var(--line);padding:9px 0;font-size:14px}
+.log:first-child{border-top:0}
+.log img{max-width:100%;border-radius:10px;margin-top:6px}
+.chk{display:flex;gap:10px;align-items:center;padding:11px 0;border-top:1px solid var(--line);font-size:15px}
+.chk input{width:22px;height:22px;margin:0}
+.live{display:inline-flex;align-items:center;gap:6px;font-size:12px;color:#b9c3d9}
+.live i{width:8px;height:8px;border-radius:50%;background:var(--ok);display:inline-block}
+.live.off i{background:var(--bad)}
+.tabs{display:flex;gap:8px;margin-bottom:12px}.tabs button{flex:1}
+.err{color:var(--bad);font-size:13px;min-height:18px}
+.back{background:none;border:0;color:var(--navy);font-weight:600;padding:4px 0 10px;font-size:14px}
+.issue{border-left:4px solid var(--bad);padding-left:10px}
+.issue.low{border-color:var(--warn)}
+.issue.done{border-color:var(--ok);opacity:.6}
+</style>
+</head>
+<body>
+<header>
+  <div><h1>SOVEREIGN TOUCH · SITE OPS</h1><small id="who"></small></div>
+  <div style="text-align:right"><span class="live off" id="live"><i></i>offline</span><br><button id="out" style="display:none;margin-top:4px">Log out</button></div>
+</header>
+<main id="app"></main>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script>
+/* ====== 1. PUT YOUR SUPABASE DETAILS HERE (Project Settings -> API) ====== */
+const SUPABASE_URL = "PASTE_PROJECT_URL";
+const SUPABASE_ANON_KEY = "PASTE_ANON_PUBLIC_KEY";
+/* ======================================================================== */
+
+const sb = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+const $ = s => document.querySelector(s);
+const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({ "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;" }[c]));
+const fmtT = d => new Date(d).toLocaleString("en-GB",{day:"2-digit",month:"short",hour:"2-digit",minute:"2-digit"});
+const ago = d => { const m = Math.round((Date.now()-new Date(d))/60000); return m<1?"just now":m<60?m+"m ago":m<1440?Math.round(m/60)+"h ago":Math.round(m/1440)+"d ago"; };
+
+let S = { user:null, profile:null, sites:[], items:[], logs:[], people:[], view:"home", siteId:null, tab:"board" };
+let timer;
+
+async function boot(){
+  const { data:{ session } } = await sb.auth.getSession();
+  if(!session) return loginView();
+  S.user = session.user;
+  const { data:p } = await sb.from("profiles").select("*").eq("id", S.user.id).single();
+  S.profile = p || { role:"supervisor", full_name:S.user.email };
+  $("#who").textContent = `${S.profile.full_name} · ${S.profile.role.toUpperCase()}`;
+  $("#out").style.display = "inline-block";
+  await load();
+  subscribe();
+}
+
+function loginView(){
+  $("#who").textContent = "";
+  $("#out").style.display = "none";
+  $("#app").innerHTML = `
+    <div class="card" style="margin-top:30px">
+      <h2>Log in</h2>
+      <label>Email</label><input id="em" type="email" autocomplete="username">
+      <label>Password</label><input id="pw" type="password" autocomplete="current-password">
+      <div class="err" id="err"></div>
+      <button class="btn gold" id="go">Log in</button>
+    </div>`;
+  $("#go").onclick = async () => {
+    $("#err").textContent = "";
+    const { error } = await sb.auth.signInWithPassword({ email:$("#em").value.trim(), password:$("#pw").value });
+    if(error) $("#err").textContent = error.message; else boot();
+  };
+}
+$("#out").onclick = async () => { await sb.auth.signOut(); location.reload(); };
+
+async function load(){
+  const [s,i,l,p] = await Promise.all([
+    sb.from("sites").select("*").order("created_at",{ascending:false}),
+    sb.from("checklist_items").select("*").order("sort"),
+    sb.from("site_logs").select("*").order("created_at",{ascending:false}).limit(400),
+    sb.from("profiles").select("*")
+  ]);
+  S.sites = s.data||[]; S.items = i.data||[]; S.logs = l.data||[]; S.people = p.data||[];
+  render();
+}
+
+function subscribe(){
+  const ch = sb.channel("ops");
+  ["sites","checklist_items","site_logs"].forEach(t =>
+    ch.on("postgres_changes",{event:"*",schema:"public",table:t},() => { clearTimeout(timer); timer=setTimeout(load,300); }));
+  ch.subscribe(st => { const el=$("#live"); const on = st==="SUBSCRIBED"; el.className = "live"+(on?"":" off"); el.innerHTML = `<i></i>${on?"live":"reconnecting"}`; });
+}
+
+const isCEO = () => S.profile?.role === "ceo";
+const person = id => S.people.find(p => p.id===id)?.full_name || "—";
+const siteLogs = id => S.logs.filter(l => l.site_id===id);
+const siteItems = id => S.items.filter(i => i.site_id===id);
+function presence(id){
+  const l = siteLogs(id).find(l => l.type==="checkin"||l.type==="checkout");
+  return l && l.type==="checkin" ? l : null;
+}
+function dayInfo(s){
+  const d = Math.floor((new Date(new Date().toDateString()) - new Date(s.start_date))/86400000)+1;
+  return { day:Math.max(d,1), late: s.status==="active" && d > (s.quoted_days||1) };
+}
+const openIssues = id => siteLogs(id).filter(l => l.type==="issue" && !l.resolved);
+
+function render(){
+  if(S.view==="site") return siteView();
+  isCEO() ? ceoView() : supHome();
+}
+
+/* ---------------- CEO ---------------- */
+function ceoView(){
+  const active = S.sites.filter(s=>s.status==="active");
+  const tabs = `<div class="tabs"><button class="btn sm ${S.tab==="board"?"":"ghost"}" onclick="S.tab='board';render()">Live board</button>
+    <button class="btn sm ${S.tab==="feed"?"":"ghost"}" onclick="S.tab='feed';render()">Activity</button>
+    <button class="btn sm ${S.tab==="manage"?"":"ghost"}" onclick="S.tab='manage';render()">Manage</button></div>`;
+  let body = "";
+  if(S.tab==="board"){
+    const issues = active.reduce((n,s)=>n+openIssues(s.id).length,0);
+    body = `<div class="card row"><div><b>${active.length}</b> active site${active.length===1?"":"s"}</div><div><b>${active.filter(s=>presence(s.id)).length}</b> with crew on site</div><div><b style="color:${issues?"var(--bad)":"inherit"}">${issues}</b> open issue${issues===1?"":"s"}</div></div>
+    <div class="grid">${active.map(siteCard).join("") || `<div class="card mute">No active sites. Add one under Manage.</div>`}</div>`;
+  } else if(S.tab==="feed"){
+    body = `<div class="card">${S.logs.slice(0,60).map(l => logRow(l,true)).join("") || `<span class="mute">Nothing yet.</span>`}</div>`;
+  } else body = manageView();
+  $("#app").innerHTML = tabs + body;
+}
+
+function siteCard(s){
+  const items = siteItems(s.id), done = items.filter(i=>i.done).length;
+  const pct = items.length ? Math.round(done/items.length*100) : 0;
+  const p = presence(s.id), di = dayInfo(s), iss = openIssues(s.id), last = siteLogs(s.id)[0];
+  return `<div class="card" onclick="openSite('${s.id}')" style="cursor:pointer">
+    <div class="row"><h2>${esc(s.name)}</h2>${p?`<span class="pill on">ON SITE</span>`:`<span class="pill off">NOT ON SITE</span>`}</div>
+    <div class="mute">${esc(s.client||"")} · ${esc(person(s.supervisor_id))}</div>
+    <div class="bar"><i style="width:${pct}%"></i></div>
+    <div class="row mute"><span>${done}/${items.length} tasks (${pct}%)</span>
+      <span class="pill ${di.late?"late":"warn"}">Day ${di.day} of ${s.quoted_days||1}${di.late?" · OVER":""}</span></div>
+    ${p?`<div class="mute" style="margin-top:6px">Checked in ${ago(p.created_at)}</div>`:""}
+    ${iss.length?`<div class="pill late" style="margin-top:8px">${iss.length} open issue${iss.length>1?"s":""}</div>`:""}
+    ${last?`<div class="mute" style="margin-top:8px">Last: ${esc((last.note||last.type).slice(0,70))} · ${ago(last.created_at)}</div>`:""}
+  </div>`;
+}
+
+function manageView(){
+  const sups = S.people.filter(p=>p.role==="supervisor");
+  return `<div class="card"><h2>Add a site</h2>
+    <label>Site name</label><input id="n_name" placeholder="e.g. Kito rooftile cleaning">
+    <label>Client</label><input id="n_client">
+    <label>Address / location</label><input id="n_addr">
+    <label>Service</label><input id="n_service" placeholder="Deep clean, rooftile, post-construction...">
+    <div class="row"><div style="flex:1"><label>Quoted days</label><input id="n_days" type="number" min="1" value="1"></div>
+    <div style="flex:1"><label>Start date</label><input id="n_start" type="date" value="${new Date().toISOString().slice(0,10)}"></div></div>
+    <label>Supervisor</label><select id="n_sup"><option value="">— choose —</option>${sups.map(p=>`<option value="${p.id}">${esc(p.full_name)}</option>`).join("")}</select>
+    <label>Checklist (one task per line)</label><textarea id="n_list" rows="6" placeholder="Pre-clean walkthrough&#10;Dusting&#10;Floors&#10;Windows&#10;Final inspection with client"></textarea>
+    <div class="err" id="n_err"></div>
+    <button class="btn gold" onclick="addSite()">Create site</button></div>
+  <div class="card"><h2>Team</h2>${S.people.map(p=>`<div class="chk"><div style="flex:1">${esc(p.full_name)}<div class="mute">${p.role}</div></div></div>`).join("")}
+    <p class="mute">To add a supervisor: Supabase → Authentication → Add user. They appear here automatically.</p></div>
+  <div class="card"><h2>All sites</h2>${S.sites.map(s=>`<div class="chk"><div style="flex:1" onclick="openSite('${s.id}')">${esc(s.name)}<div class="mute">${s.status}</div></div>
+    ${s.status==="active"?`<button class="btn sm ghost" onclick="setStatus('${s.id}','completed')">Complete</button>`:`<button class="btn sm ghost" onclick="setStatus('${s.id}','active')">Reopen</button>`}</div>`).join("")}</div>`;
+}
+
+async function addSite(){
+  const name = $("#n_name").value.trim();
+  if(!name || !$("#n_sup").value){ $("#n_err").textContent="Site name and supervisor are required."; return; }
+  const { data, error } = await sb.from("sites").insert({
+    name, client:$("#n_client").value, address:$("#n_addr").value, service:$("#n_service").value,
+    quoted_days:+$("#n_days").value||1, start_date:$("#n_start").value, supervisor_id:$("#n_sup").value
+  }).select().single();
+  if(error){ $("#n_err").textContent=error.message; return; }
+  const lines = $("#n_list").value.split("\n").map(x=>x.trim()).filter(Boolean);
+  if(lines.length) await sb.from("checklist_items").insert(lines.map((label,i)=>({site_id:data.id,label,sort:i})));
+  S.tab="board"; load();
+}
+async function setStatus(id,status){ await sb.from("sites").update({status}).eq("id",id); load(); }
+
+/* ---------------- Supervisor ---------------- */
+function supHome(){
+  const mine = S.sites.filter(s=>s.status==="active");
+  $("#app").innerHTML = `<h2 style="margin:6px 2px 12px">My sites</h2>` +
+    (mine.map(s=>{ const p=presence(s.id), di=dayInfo(s); return `<div class="card" onclick="openSite('${s.id}')">
+      <div class="row"><h2>${esc(s.name)}</h2>${p?`<span class="pill on">CHECKED IN</span>`:`<span class="pill off">NOT CHECKED IN</span>`}</div>
+      <div class="mute">${esc(s.address||"")}</div><div class="mute">Day ${di.day} of ${s.quoted_days||1}</div></div>`; }).join("")
+    || `<div class="card mute">No sites assigned to you yet.</div>`);
+}
+
+function openSite(id){ S.view="site"; S.siteId=id; render(); scrollTo(0,0); }
+function home(){ S.view="home"; render(); }
+
+function siteView(){
+  const s = S.sites.find(x=>x.id===S.siteId); if(!s) return home();
+  const p = presence(s.id), items = siteItems(s.id), logs = siteLogs(s.id), sup = !isCEO();
+  const done = items.filter(i=>i.done).length;
+  $("#app").innerHTML = `<button class="back" onclick="home()">← Back</button>
+  <div class="card"><div class="row"><h2>${esc(s.name)}</h2>${p?`<span class="pill on">ON SITE</span>`:`<span class="pill off">NOT ON SITE</span>`}</div>
+    <div class="mute">${esc(s.client||"")} ${s.address?"· "+esc(s.address):""}</div>
+    <div class="mute">${esc(s.service||"")} · Day ${dayInfo(s).day} of ${s.quoted_days||1} · Supervisor: ${esc(person(s.supervisor_id))}</div>
+    ${sup && s.status==="active" ? `<div style="margin-top:12px">${p
+      ? `<button class="btn red" onclick="logIt('checkout')">Check out</button>`
+      : `<button class="btn gold" onclick="logIt('checkin')">Check in now</button>`}</div>`:""}</div>
+
+  <div class="card"><h2>Checklist (${done}/${items.length})</h2>
+    ${items.map(i=>`<label class="chk" style="color:var(--text);font-size:15px"><input type="checkbox" ${i.done?"checked":""} ${s.status!=="active"?"disabled":""} onchange="toggle('${i.id}',this.checked)">
+      <span style="${i.done?"text-decoration:line-through;color:var(--mute)":""}">${esc(i.label)}</span></label>`).join("") || `<span class="mute">No tasks.</span>`}</div>
+
+  ${sup && s.status==="active" ? `<div class="card"><h2>Send an update</h2>
+    <textarea id="note" rows="3" placeholder="What's happening on site?"></textarea>
+    <label>Photo (optional)</label><input id="photo" type="file" accept="image/*" capture="environment">
+    <div class="err" id="uerr"></div>
+    <div class="row"><button class="btn sm" style="flex:1" onclick="logIt('update')">Send update</button>
+    <button class="btn sm red" style="flex:1" onclick="logIt('issue','high')">Report issue</button></div></div>`:""}
+
+  <div class="card"><h2>Timeline</h2>${logs.map(l=>logRow(l,false)).join("") || `<span class="mute">Nothing logged yet.</span>`}</div>`;
+}
+
+function logRow(l,showSite){
+  const site = S.sites.find(s=>s.id===l.site_id);
+  const lab = {checkin:"✅ Checked in",checkout:"🚪 Checked out",update:"💬 Update",issue:"⚠️ Issue"}[l.type];
+  const cls = l.type==="issue" ? `issue ${l.severity==="low"?"low":""} ${l.resolved?"done":""}` : "";
+  return `<div class="log ${cls}"><div class="row"><b>${lab}${showSite&&site?" · "+esc(site.name):""}</b><span class="mute">${fmtT(l.created_at)} · ${esc(person(l.supervisor_id))}</span></div>
+    ${l.note?`<div>${esc(l.note)}</div>`:""}${l.photo_url?`<a href="${esc(l.photo_url)}" target="_blank"><img src="${esc(l.photo_url)}" loading="lazy"></a>`:""}
+    ${l.type==="issue"&&isCEO()?`<button class="btn sm ghost" style="margin-top:6px" onclick="resolve('${l.id}',${!l.resolved})">${l.resolved?"Reopen":"Mark resolved"}</button>`:""}</div>`;
+}
+
+async function toggle(id,done){
+  const { error } = await sb.from("checklist_items").update({ done, done_at: done?new Date().toISOString():null }).eq("id",id);
+  if(error) alert(error.message);
+}
+async function resolve(id,v){ await sb.from("site_logs").update({resolved:v}).eq("id",id); }
+
+async function logIt(type,severity){
+  const note = ($("#note")?.value||"").trim();
+  const file = $("#photo")?.files?.[0];
+  if(type==="issue" && !note){ $("#uerr").textContent="Describe the issue first."; return; }
+  if(type==="update" && !note && !file){ $("#uerr").textContent="Add a note or a photo."; return; }
+  let photo_url = null;
+  if(file){
+    const path = `${S.siteId}/${Date.now()}-${file.name.replace(/[^\w.]/g,"_")}`;
+    const up = await sb.storage.from("site-photos").upload(path,file);
+    if(up.error){ $("#uerr").textContent="Photo upload failed: "+up.error.message; return; }
+    photo_url = sb.storage.from("site-photos").getPublicUrl(path).data.publicUrl;
+  }
+  const { error } = await sb.from("site_logs").insert({ site_id:S.siteId, supervisor_id:S.user.id, type, note:note||null, severity:severity||null, photo_url });
+  if(error){ alert(error.message); return; }
+  load();
+}
+
+sb.auth.onAuthStateChange(()=>{});
+boot();
+if("serviceWorker" in navigator){ /* add sw.js later for offline support */ }
+</script>
+</body>
+</html>

@@ -1,0 +1,9 @@
+{
+  "name": "STHC Site Ops",
+  "short_name": "Site Ops",
+  "start_url": "./index.html",
+  "display": "standalone",
+  "background_color": "#0B1F3A",
+  "theme_color": "#0B1F3A",
+  "icons": []
+}

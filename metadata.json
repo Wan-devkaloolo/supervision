@@ -1,0 +1,6 @@
+{
+  "name": "Sovereign Touch Site Ops",
+  "description": "Live field operations, supervisor check-ins, real-time checklists, and photo logs for Sovereign Touch cleaning and site teams.",
+  "requestFramePermissions": ["geolocation"],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
