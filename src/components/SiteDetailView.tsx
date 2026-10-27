@@ -369,18 +369,18 @@ export const SiteDetailView: React.FC<Props> = ({
           </div>
         )}
 
-        {/* Presence Hero Action (Supervisor & Crew) */}
-        {site.status === 'active' && (
-          <div className="mt-5 pt-4 border-t border-gray-100 flex flex-col sm:flex-row items-center justify-between gap-3 bg-gradient-to-r from-gray-50 to-white p-3.5 rounded-xl border border-gray-200">
-            <div>
-              <p className="text-xs font-bold text-[#0B1F3A]">Site Attendance Status</p>
-              <p className="text-[11px] text-gray-500">
-                {presence
-                  ? `Checked in by ${getPersonName(presence.supervisor_id)} (${timeAgo(presence.created_at)})`
-                  : 'No operatives currently logged as present on site.'}
-              </p>
-            </div>
+        {/* Attendance Status Bar */}
+        <div className="mt-5 pt-4 border-t border-gray-100 flex flex-col sm:flex-row items-center justify-between gap-3 bg-gradient-to-r from-gray-50 to-white p-3.5 rounded-xl border border-gray-200">
+          <div>
+            <p className="text-xs font-bold text-[#0B1F3A]">Site Attendance Status</p>
+            <p className="text-[11px] text-gray-500">
+              {presence
+                ? `Checked in by ${getPersonName(presence.supervisor_id)} (${timeAgo(presence.created_at)})`
+                : 'No operatives currently logged as present on site.'}
+            </p>
+          </div>
 
+          {!isCEO && site.status === 'active' && (
             <button
               onClick={handleCheckInOut}
               disabled={isSubmitting}
@@ -402,8 +402,15 @@ export const SiteDetailView: React.FC<Props> = ({
                 </>
               )}
             </button>
-          </div>
-        )}
+          )}
+
+          {isCEO && presence && (
+            <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-emerald-100 text-emerald-800 text-xs font-bold border border-emerald-300">
+              <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+              Operatives Active On Site
+            </span>
+          )}
+        </div>
       </div>
 
       {/* Checklist Card */}
@@ -559,105 +566,107 @@ export const SiteDetailView: React.FC<Props> = ({
         </div>
       </div>
 
-      {/* Send an Update / Report Issue Box */}
-      <div className="bg-white rounded-2xl border border-gray-200/80 p-5 shadow-xs space-y-4">
-        <h2 className="text-base font-bold text-[#0B1F3A] flex items-center gap-2">
-          <Send className="w-4 h-4 text-[#C9A24B]" />
-          Post Live Update or Report Issue
-        </h2>
+      {/* Send an Update / Report Issue Box (Supervisors / Field Crew only) */}
+      {!isCEO && site.status === 'active' && (
+        <div className="bg-white rounded-2xl border border-gray-200/80 p-5 shadow-xs space-y-4">
+          <h2 className="text-base font-bold text-[#0B1F3A] flex items-center gap-2">
+            <Send className="w-4 h-4 text-[#C9A24B]" />
+            Post Live Update or Report Issue
+          </h2>
 
-        <textarea
-          rows={3}
-          value={note}
-          onChange={(e) => setNote(e.target.value)}
-          placeholder="What's happening on site? (e.g. North wall stripped, await tile dry; or describe a blockage)"
-          className="w-full p-3 text-sm rounded-xl border border-gray-300 focus:outline-none focus:ring-2 focus:ring-[#C9A24B] bg-gray-50/50"
-        />
+          <textarea
+            rows={3}
+            value={note}
+            onChange={(e) => setNote(e.target.value)}
+            placeholder="What's happening on site? (e.g. North wall stripped, await tile dry; or describe a blockage)"
+            className="w-full p-3 text-sm rounded-xl border border-gray-300 focus:outline-none focus:ring-2 focus:ring-[#C9A24B] bg-gray-50/50"
+          />
 
-        {/* Photo Selector */}
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-          <div className="flex items-center gap-3">
-            <label className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl bg-gray-100 hover:bg-gray-200 text-xs font-semibold text-gray-700 cursor-pointer transition-colors">
-              <Camera className="w-4 h-4 text-[#C9A24B]" />
-              <span>Attach Photo</span>
-              <input
-                type="file"
-                accept="image/*"
-                capture="environment"
-                className="hidden"
-                onChange={handlePhotoSelect}
-              />
-            </label>
-
-            {photoPreview && (
-              <div className="relative inline-block">
-                <img
-                  src={photoPreview}
-                  alt="Preview"
-                  className="w-10 h-10 object-cover rounded-lg border border-gray-300"
+          {/* Photo Selector */}
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+            <div className="flex items-center gap-3">
+              <label className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl bg-gray-100 hover:bg-gray-200 text-xs font-semibold text-gray-700 cursor-pointer transition-colors">
+                <Camera className="w-4 h-4 text-[#C9A24B]" />
+                <span>Attach Photo</span>
+                <input
+                  type="file"
+                  accept="image/*"
+                  capture="environment"
+                  className="hidden"
+                  onChange={handlePhotoSelect}
                 />
-                <button
-                  onClick={clearPhoto}
-                  className="absolute -top-1.5 -right-1.5 bg-rose-600 text-white rounded-full p-0.5 shadow-sm hover:bg-rose-700"
-                  title="Remove"
-                >
-                  ×
-                </button>
-              </div>
-            )}
+              </label>
+
+              {photoPreview && (
+                <div className="relative inline-block">
+                  <img
+                    src={photoPreview}
+                    alt="Preview"
+                    className="w-10 h-10 object-cover rounded-lg border border-gray-300"
+                  />
+                  <button
+                    onClick={clearPhoto}
+                    className="absolute -top-1.5 -right-1.5 bg-rose-600 text-white rounded-full p-0.5 shadow-sm hover:bg-rose-700"
+                    title="Remove"
+                  >
+                    ×
+                  </button>
+                </div>
+              )}
+            </div>
+
+            {/* Issue Severity Selector */}
+            <div className="flex items-center gap-2 text-xs">
+              <span className="text-gray-500 font-medium">Issue Urgency:</span>
+              <button
+                type="button"
+                onClick={() => setIssueSeverity('low')}
+                className={`px-2.5 py-1 rounded-lg font-semibold transition-colors ${
+                  issueSeverity === 'low'
+                    ? 'bg-amber-100 text-amber-900 border border-amber-300'
+                    : 'bg-gray-100 text-gray-600'
+                }`}
+              >
+                Low
+              </button>
+              <button
+                type="button"
+                onClick={() => setIssueSeverity('high')}
+                className={`px-2.5 py-1 rounded-lg font-semibold transition-colors ${
+                  issueSeverity === 'high'
+                    ? 'bg-red-100 text-red-800 border border-red-300'
+                    : 'bg-gray-100 text-gray-600'
+                }`}
+              >
+                High
+              </button>
+            </div>
           </div>
 
-          {/* Issue Severity Selector */}
-          <div className="flex items-center gap-2 text-xs">
-            <span className="text-gray-500 font-medium">Issue Urgency:</span>
+          {actionError && (
+            <p className="text-xs text-rose-600 font-semibold">{actionError}</p>
+          )}
+
+          {/* Action Buttons */}
+          <div className="grid grid-cols-2 gap-3 pt-1">
             <button
-              type="button"
-              onClick={() => setIssueSeverity('low')}
-              className={`px-2.5 py-1 rounded-lg font-semibold transition-colors ${
-                issueSeverity === 'low'
-                  ? 'bg-amber-100 text-amber-900 border border-amber-300'
-                  : 'bg-gray-100 text-gray-600'
-              }`}
+              onClick={() => handleSendLog('update')}
+              disabled={isSubmitting}
+              className="w-full py-2.5 px-4 rounded-xl bg-[#0B1F3A] hover:bg-[#13305a] text-white text-xs font-semibold shadow-xs transition-all active:scale-95"
             >
-              Low
+              Send Update
             </button>
             <button
-              type="button"
-              onClick={() => setIssueSeverity('high')}
-              className={`px-2.5 py-1 rounded-lg font-semibold transition-colors ${
-                issueSeverity === 'high'
-                  ? 'bg-red-100 text-red-800 border border-red-300'
-                  : 'bg-gray-100 text-gray-600'
-              }`}
+              onClick={() => handleSendLog('issue')}
+              disabled={isSubmitting}
+              className="w-full py-2.5 px-4 rounded-xl bg-red-600 hover:bg-red-700 text-white text-xs font-semibold shadow-xs transition-all active:scale-95 flex items-center justify-center gap-1.5"
             >
-              High
+              <AlertTriangle className="w-3.5 h-3.5" />
+              Report Issue
             </button>
           </div>
         </div>
-
-        {actionError && (
-          <p className="text-xs text-rose-600 font-semibold">{actionError}</p>
-        )}
-
-        {/* Action Buttons */}
-        <div className="grid grid-cols-2 gap-3 pt-1">
-          <button
-            onClick={() => handleSendLog('update')}
-            disabled={isSubmitting}
-            className="w-full py-2.5 px-4 rounded-xl bg-[#0B1F3A] hover:bg-[#13305a] text-white text-xs font-semibold shadow-xs transition-all active:scale-95"
-          >
-            Send Update
-          </button>
-          <button
-            onClick={() => handleSendLog('issue')}
-            disabled={isSubmitting}
-            className="w-full py-2.5 px-4 rounded-xl bg-red-600 hover:bg-red-700 text-white text-xs font-semibold shadow-xs transition-all active:scale-95 flex items-center justify-center gap-1.5"
-          >
-            <AlertTriangle className="w-3.5 h-3.5" />
-            Report Issue
-          </button>
-        </div>
-      </div>
+      )}
 
       {/* Site Activity Timeline Card */}
       <div className="bg-white rounded-2xl border border-gray-200/80 p-5 shadow-xs space-y-4">

@@ -21,18 +21,36 @@ const STORAGE_KEYS = {
 
 // Check for environment variables or saved keys
 export function getSavedSupabaseConfig() {
-  const envUrl = (import.meta as unknown as { env: Record<string, string> }).env?.VITE_SUPABASE_URL || '';
-  const envKey = (import.meta as unknown as { env: Record<string, string> }).env?.VITE_SUPABASE_ANON_KEY || '';
-  const url = localStorage.getItem(STORAGE_KEYS.SUPABASE_URL) || envUrl;
-  const anonKey = localStorage.getItem(STORAGE_KEYS.SUPABASE_ANON_KEY) || envKey;
+  const envUrl = (import.meta.env.VITE_SUPABASE_URL || '').trim();
+  const envKey = (import.meta.env.VITE_SUPABASE_ANON_KEY || '').trim();
+  const url = (localStorage.getItem(STORAGE_KEYS.SUPABASE_URL) || envUrl).trim();
+  const anonKey = (localStorage.getItem(STORAGE_KEYS.SUPABASE_ANON_KEY) || envKey).trim();
+
+  const isPlaceholder = (val: string) => {
+    if (!val) return true;
+    const lower = val.toLowerCase();
+    return (
+      lower.includes('your_project') ||
+      lower.includes('your_anon') ||
+      lower.includes('paste_') ||
+      lower.includes('xyzcompany') ||
+      lower.includes('example') ||
+      lower.includes('paste_project_url') ||
+      lower.includes('paste_anon_public_key')
+    );
+  };
+
   const isConfigured = Boolean(
     url &&
     anonKey &&
-    url !== 'PASTE_PROJECT_URL' &&
-    anonKey !== 'PASTE_ANON_PUBLIC_KEY' &&
-    url.startsWith('https://')
+    !isPlaceholder(url) &&
+    !isPlaceholder(anonKey) &&
+    url.startsWith('https://') &&
+    url.includes('.supabase.co')
   );
-  const useSupabase = localStorage.getItem(STORAGE_KEYS.USE_SUPABASE) !== 'false' && isConfigured;
+
+  const savedPreference = localStorage.getItem(STORAGE_KEYS.USE_SUPABASE);
+  const useSupabase = isConfigured && savedPreference !== 'false';
   return { url, anonKey, isConfigured, useSupabase };
 }
 
@@ -226,26 +244,38 @@ export async function loadFromSupabase() {
     currentData.error = null;
     notify();
 
-    // Subscribe to realtime changes
-    const ch = sb.channel('ops_channel');
-    ['sites', 'checklist_items', 'site_logs', 'profiles'].forEach((t) => {
-      ch.on(
-        'postgres_changes',
-        { event: '*', schema: 'public', table: t },
-        () => {
-          loadFromSupabase();
-        }
-      );
-    });
+    // Subscribe to realtime changes safely
+    try {
+      const ch = sb.channel('ops_channel');
+      ['sites', 'checklist_items', 'site_logs', 'profiles'].forEach((t) => {
+        ch.on(
+          'postgres_changes',
+          { event: '*', schema: 'public', table: t },
+          () => {
+            loadFromSupabase();
+          }
+        );
+      });
 
-    ch.subscribe((status) => {
-      currentData.isLive = status === 'SUBSCRIBED';
-      notify();
-    });
+      ch.subscribe((status) => {
+        currentData.isLive = status === 'SUBSCRIBED';
+        notify();
+      });
+    } catch (subErr) {
+      console.warn('Supabase realtime notice:', subErr);
+    }
   } catch (err: unknown) {
-    console.error('Supabase query error:', err);
+    const errorMsg = (err as { message?: string })?.message || 'Unable to reach Supabase database';
+    console.warn('Supabase connection notice (falling back to local mode):', errorMsg);
     currentData.isLive = false;
-    currentData.error = (err as { message?: string })?.message || 'Failed to connect to Supabase';
+    currentData.error = errorMsg;
+    // Ensure dashboard displays local storage data smoothly
+    const localSites = readLocal<Site[]>(STORAGE_KEYS.SITES, INITIAL_SITES);
+    const localItems = readLocal<ChecklistItem[]>(STORAGE_KEYS.ITEMS, INITIAL_CHECKLIST_ITEMS);
+    const localLogs = readLocal<SiteLog[]>(STORAGE_KEYS.LOGS, INITIAL_LOGS);
+    if (!currentData.sites.length) currentData.sites = localSites;
+    if (!currentData.items.length) currentData.items = localItems;
+    if (!currentData.logs.length) currentData.logs = localLogs;
     notify();
   }
 }
